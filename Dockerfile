@@ -31,7 +31,11 @@ LABEL org.opencontainers.image.licenses=MIT
 
 COPY --from=uv --chown=app:app /app/.venv /app/.venv
 
+# Add uv binaries to image
+RUN python3 -m ensurepip && pip install --no-cache-dir uv
+
 # Place executables in the environment at the front of the path
-ENV PATH="/app/.venv/bin:$PATH"
+ENV PATH="/app/.venv/bin:/usr/local/bin:$PATH" \
+    UV_PYTHON_PREFERENCE="only-system"
 
 ENTRYPOINT ["mcp-proxy"]
