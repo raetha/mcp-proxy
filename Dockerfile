@@ -23,11 +23,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable
 
 # Final stage with explicit platform specification
-FROM python:3.12-alpine
+#FROM python:3.12-alpine
+FROM docker.io/nikolaik/python-nodejs:python3.12-nodejs22-alpine
 
 COPY --from=uv --chown=app:app /app/.venv /app/.venv
 
-# Add uv binaries to image
+# Add uv to image
 RUN python3 -m ensurepip && pip install --no-cache-dir uv
 
 # Place executables in the environment at the front of the path
