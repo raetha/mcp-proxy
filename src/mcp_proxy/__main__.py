@@ -15,10 +15,10 @@ import typing as t
 
 from mcp.client.stdio import StdioServerParameters
 
+from .mcp_server import MCPServerSettings, run_mcp_server
 from .sse_client import run_sse_client
-from .sse_server import SseServerSettings, run_sse_server
 
-logging.basicConfig(level=logging.DEBUG)
+# Deprecated env var. Here for backwards compatibility.
 SSE_URL: t.Final[str | None] = os.getenv(
     "SSE_URL",
     None,
@@ -35,9 +35,9 @@ def main() -> None:
             "Examples:\n"
             "  mcp-proxy http://localhost:8080/sse\n"
             "  mcp-proxy --headers Authorization 'Bearer YOUR_TOKEN' http://localhost:8080/sse\n"
-            "  mcp-proxy --sse-port 8080 -- your-command --arg1 value1 --arg2 value2\n"
-            "  mcp-proxy your-command --sse-port 8080 -e KEY VALUE -e ANOTHER_KEY ANOTHER_VALUE\n"
-            "  mcp-proxy your-command --sse-port 8080 --allow-origin='*'\n"
+            "  mcp-proxy --port 8080 -- your-command --arg1 value1 --arg2 value2\n"
+            "  mcp-proxy your-command --port 8080 -e KEY VALUE -e ANOTHER_KEY ANOTHER_VALUE\n"
+            "  mcp-proxy your-command --port 8080 --allow-origin='*'\n"
         ),
         formatter_class=argparse.RawTextHelpFormatter,
     )
@@ -79,29 +79,58 @@ def main() -> None:
         default=[],
     )
     stdio_client_options.add_argument(
+        "--cwd",
+        default=None,
+        help="The working directory to use when spawning the process.",
+    )
+    stdio_client_options.add_argument(
         "--pass-environment",
         action=argparse.BooleanOptionalAction,
         help="Pass through all environment variables when spawning the server.",
         default=False,
     )
+    stdio_client_options.add_argument(
+        "--debug",
+        action=argparse.BooleanOptionalAction,
+        help="Enable debug mode with detailed logging output.",
+        default=False,
+    )
 
-    sse_server_group = parser.add_argument_group("SSE server options")
-    sse_server_group.add_argument(
+    mcp_server_group = parser.add_argument_group("SSE server options")
+    mcp_server_group.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="Port to expose an SSE server on. Default is a random port",
+    )
+    mcp_server_group.add_argument(
+        "--host",
+        default=None,
+        help="Host to expose an SSE server on. Default is 127.0.0.1",
+    )
+    mcp_server_group.add_argument(
+        "--stateless",
+        action=argparse.BooleanOptionalAction,
+        help="Enable stateless mode for streamable http transports. Default is False",
+        default=False,
+    )
+    mcp_server_group.add_argument(
         "--sse-port",
         type=int,
         default=0,
-        help="Port to expose an SSE server on. Default is a random port",
+        help="(deprecated) Same as --port",
     )
-    sse_server_group.add_argument(
+    mcp_server_group.add_argument(
         "--sse-host",
         default="127.0.0.1",
-        help="Host to expose an SSE server on. Default is 127.0.0.1",
+        help="(deprecated) Same as --host",
     )
-    sse_server_group.add_argument(
+    mcp_server_group.add_argument(
         "--allow-origin",
         nargs="+",
         default=[],
-        help="Allowed origins for the SSE server. Can be used multiple times. Default is no CORS allowed.",  # noqa: E501
+        help="Allowed origins for the SSE server. "
+        "Can be used multiple times. Default is no CORS allowed.",
     )
 
     args = parser.parse_args()
@@ -110,13 +139,19 @@ def main() -> None:
         parser.print_help()
         sys.exit(1)
 
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.INFO,
+        format="[%(levelname)1.1s %(asctime)s.%(msecs).03d %(name)s] %(message)s",
+    )
+    logger = logging.getLogger(__name__)
+
     if (
         SSE_URL
         or args.command_or_url.startswith("http://")
         or args.command_or_url.startswith("https://")
     ):
         # Start a client connected to the SSE server, and expose as a stdio server
-        logging.debug("Starting SSE client and stdio server")
+        logger.debug("Starting SSE client and stdio server")
         headers = dict(args.headers)
         if api_access_token := os.getenv("API_ACCESS_TOKEN", None):
             headers["Authorization"] = f"Bearer {api_access_token}"
@@ -124,7 +159,7 @@ def main() -> None:
         return
 
     # Start a client connected to the given command, and expose as an SSE server
-    logging.debug("Starting stdio client and SSE server")
+    logger.debug("Starting stdio client and SSE server")
 
     # The environment variables passed to the server process
     env: dict[str, str] = {}
@@ -138,13 +173,17 @@ def main() -> None:
         command=args.command_or_url,
         args=args.args,
         env=env,
+        cwd=args.cwd if args.cwd else None,
     )
-    sse_settings = SseServerSettings(
-        bind_host=args.sse_host,
-        port=args.sse_port,
+
+    mcp_settings = MCPServerSettings(
+        bind_host=args.host if args.host is not None else args.sse_host,
+        port=args.port if args.port is not None else args.sse_port,
+        stateless=args.stateless,
         allow_origins=args.allow_origin if len(args.allow_origin) > 0 else None,
+        log_level="DEBUG" if args.debug else "INFO",
     )
-    asyncio.run(run_sse_server(stdio_params, sse_settings))
+    asyncio.run(run_mcp_server(stdio_params, mcp_settings))
 
 
 if __name__ == "__main__":
