@@ -1,4 +1,4 @@
-"""Create an MCP server that proxies requests throgh an MCP client.
+"""Create an MCP server that proxies requests through an MCP client.
 
 This server is created independent of any transport mechanism.
 """
