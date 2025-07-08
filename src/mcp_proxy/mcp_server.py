@@ -64,7 +64,7 @@ def create_single_instance_routes(
         stateless_instance,
     )
 
-    sse_transport = SseServerTransport("messages/")
+    sse_transport = SseServerTransport("/messages/")
     http_session_manager = StreamableHTTPSessionManager(
         app=mcp_server_instance,
         event_store=None,
@@ -72,7 +72,7 @@ def create_single_instance_routes(
         stateless=stateless_instance,
     )
 
-    async def handle_sse_instance(request: Request) -> None:
+    async def handle_sse_instance(request: Request) -> Response:
         async with sse_transport.connect_sse(
             request.scope,
             request.receive,
@@ -84,6 +84,7 @@ def create_single_instance_routes(
                 write_stream,
                 mcp_server_instance.create_initialization_options(),
             )
+        return Response()
 
     async def handle_streamable_http_instance(scope: Scope, receive: Receive, send: Send) -> None:
         _update_global_activity()
@@ -184,6 +185,8 @@ async def run_mcp_server(
             middleware=middleware,
             lifespan=combined_lifespan,
         )
+
+        starlette_app.router.redirect_slashes = False
 
         config = uvicorn.Config(
             starlette_app,
